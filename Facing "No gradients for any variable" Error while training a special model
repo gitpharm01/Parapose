@@ -1,0 +1,63 @@
+
+
+I'm currently building a model on tensorflow( ver:1.8 os:Ubuntu MATE16.04) platform.
+THe model's purpose is to detect/match keypoints of human body.
+While training, the error ""  occured, and I have difficulties to fix it.
+
+Background of the model:
+It's basic ideas came from these two papers:
+1.
+2.
+They showed it's possible to match images according to Hash codes generated from a convolutional network.
+The similarity of two pictures is determined by the Hamming distance between their corresponding hash codes.
+I think it's possible to develop a extremely light weight model to perform real-time human pose estimation on a video with "constant human subject" and "fixed background".
+
+Model Structure
+01.Data source: 3 images from one video with the same human subject and similar background.
+               Every human keypoints in each image are well labeled.
+               2 of the images will be used as the "hint sources" and the last image will be the target for keypoint detection/matching.
+02.Hints: 23x23pixel ROIs will be cropped from the "hint source" images according to the location of human keypoints.
+          The center of these ROIs are the keypoints.
+03.convolutional network "for Hints":
+          A simple 3-layered structure.
+　　　　　The first two layers are  convolution by [2,2] stride with a 3x3 filter.
+          The last layer is a 5x5 convolution on a 5x5 input with no padding(equals to a fully connected layer)
+          This will turn a 23x23pixel Hint ROI into one 32 bit Hashcodes.
+          One hint souce image will generate a set of 16 Hash codes.
+04.Convolutional network "for target image":
+          The network share the smae weights with the hint network.
+          But in this case, each convolution layer have paddings.
+          The 301x301pixel image will be turned into a 76x76 "Hash map"
+05.Hash matching:
+          I made a function called "  " to calculate the Hamming distance between "hint hash" and the hash codes on each point of the hash map.
+          This function will create a "distance map".
+          The location of the point with lowgest distance value will be treated as the location of the keypoint.
+06.Loss calculation:
+          I made a function "" to calculate the total loss of 16 keypoints.
+          The loss are normalized euclidean distance between ground truth label points and the points located by the model.
+07.proposed working scenario:
+          Before initializing this model, the user will take two pictures of the target human subject from different angles.
+          The pictures will be labeled by the state of art models like OpenPose or DeepPose and generate Hint Hashs from them with convolution network mentioned in 03.
+          Finally the video stream will be started and processd by the model.
+08.Why "Two" sets of hints?
+          One human joint/keypoint observed from different angles will have very diferent appearance.
+          Instead of increasing dimetionality of the neural networ, I want to "cheat the game" by gathering two hints instead of one.
+          I want to know whether it can increase the precision and generalizational capacity of the model or not.
+
+The problems I faced:
+01.The ""f error(My main question of this post):
+    As mentioned above, I'm facing "" error while training the model.
+    I tried to learn from posts like "" and "".
+    But currently I have no clue even though I checked the computational graph.
+02.The "Batch" problem
+    Due to its unique structure, it's hard to use conventional placeholder to contain the input data of multiple batch.
+    I fixed it by setting the batch number to 3 and manually combine the value of loss functions.
+
+The code:
+
+The graph
+
+The Dataset: It's a custom dataset generated from mpii dataset.
+             It have 223 clusters of images.
+             Each cluster have one constant human subject in various poses and the background remains the same.
+             One cluster have at least 3 pictures.
