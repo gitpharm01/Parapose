@@ -2,7 +2,7 @@ import numpy as np
 import random
 import os
 import json
-
+import math
 import cv2
 
 def getPaddedROI(img, center_x, center_y, width, height):
@@ -57,6 +57,30 @@ def getPaddedROI(img, center_x, center_y, width, height):
     else:
         img_roi = img[top_left_y : bottom_right_y ,top_left_x : bottom_right_x ]
     return img_roi
+
+#similarity map converter
+#convert 16 target ground truth label(coordinates) into 16 Distance maps
+#Each map have value '0' on the kepoint and '32'(according to the length of the generated Hash codes) on non-keypoint areas
+def make_heatmap(emptymap ,joint_idx, point, sigma):
+    point_x,point_y = point
+    _, height, width = emptymap.shape[:3]
+
+    th= 4.605
+    delta = math.sqrt(th * 2)
+    x0 = int(max(0, point_x - delta * sigma))
+    y0 = int(max(0, point_y - delta * sigma))
+    
+    x1 = int(min(width, point_x + delta * sigma))
+    y1 = int(min(height, point_y + delta * sigma))
+    
+    for y in range(y0,y1):
+        for x in range(x0,x1):
+            d = (x - point_x)**2 + (y - point_y)**2
+            exp = d / 2.0 / sigma / sigma
+            if exp > th:
+                continue
+            emptymap[joint_idx][y][x] = max (emptymap[joint_idx][y][x], math.exp(-exp))
+            emptymap[joint_idx][y][x] = min (emptymap[joint_idx][y][x], 1.0) 
 
 def training_data_feeder(joint_data_path, train_val_path, imgpath, input_size, hint_roi_size):
     #load trainvalset data,
@@ -145,11 +169,16 @@ def training_data_feeder(joint_data_path, train_val_path, imgpath, input_size, h
         tmp = getPaddedROI(h_img2, int(h_label2[i][0]), int(h_label2[i][1]), hint_roi_size, hint_roi_size)
         hintSet02.append(tmp)
     #Normalize the value by dividing with input_size
+    #
+    joint_idx = 0
+    heatmap = np.zeros((16, 76, 76) , dtype = np.float32)
     for joint in t_label:
-        joint[0] = joint[0]*resize_ratiot[0] 
-        joint[1] = joint[1]*resize_ratiot[1] 
-
-    return hintSet01, hintSet02, t_img, t_label    
+        
+        point =[ joint[0]*resize_ratiot[0] * 76, joint[1]*resize_ratiot[1] *76 ]
+        make_heatmap(heatmap, joint_idx, point, 1)  #sigma = 1
+        joint_idx +=1
+    heatmap = 1 - heatmap
+    return hintSet01, hintSet02, t_img, heatmap    
     
     #cv2.imshow("img_point",img_point)
     #cv2.waitKey(0)
@@ -170,5 +199,10 @@ def training_data_feeder(joint_data_path, train_val_path, imgpath, input_size, h
 #input_size = 400
 #hint_roi = 14
 
-#hintSet01,hintSet02,t_img,t_label = training_data_feeder(joint_data_path, train_val_path, imgpath, input_size, hint_roi )
-#print(np.shape(hintSet01[0]))
+#hintSet01,hintSet02,t_img, heatmap = training_data_feeder(joint_data_path, train_val_path, imgpath, input_size, hint_roi )
+
+#print(np.shape(heatmap))
+#cv2.imshow('target_image',t_img)
+#for i in range(16):
+#    cv2.imshow('heat map',heatmap[i])
+#    cv2.waitKey(0)
